@@ -1,8 +1,8 @@
-import React, { useEffect, useState, ChangeEvent } from 'react';
-import { Link } from 'react-router-dom';
+import React, { useEffect, useState, ChangeEvent, FormEvent } from 'react';
+import { Link, useHistory } from 'react-router-dom';
 import { Map, TileLayer, Marker } from 'react-leaflet';
 import { FiArrowLeft } from 'react-icons/fi';
-
+import { LeafletMouseEvent } from 'leaflet';
 import axios from 'axios';
 import api from '../../services/api';
 
@@ -29,14 +29,32 @@ const CreatePoint = () => {
   const [ states, setStates ] = useState<string[]>([]);
   const [ cities, setCities ] = useState<string[]>([]);
 
+  const [formData, setFormData] = useState({
+    name: '',
+    email: '',
+    phone: ''
+  });
+
   const [ selectedState, setSelectedState ] = useState('0');
   const [ selectedCity, setSelectedCity ] = useState('0');
+  const [ selectedItems, setSelectedItems ] = useState<number[]>([]);
+  const [ initialPosition, setInitialPosition ] = useState<[number, number]>([0,0]);
+  const [ selectedPosition, setSelectedPosition ] = useState<[number, number]>([0,0]);
+
+  const history = useHistory();
+
+  useEffect(() => {
+    navigator.geolocation.getCurrentPosition(position => {
+      const { latitude, longitude } = position.coords;
+      setInitialPosition([latitude, longitude]);
+    });
+  }, []);
 
   useEffect(() => {
     api.get('items').then(response => {
       setItems(response.data);
     });
-   }, []);
+  }, []);
 
   useEffect(() => {
     axios.get<State[]>('https://servicodados.ibge.gov.br/api/v1/localidades/estados').then(response => {
@@ -65,6 +83,58 @@ const CreatePoint = () => {
     setSelectedCity(event.target.value);
   }
 
+  function handleMapClick(event: LeafletMouseEvent) {
+    setSelectedPosition([
+      event.latlng.lat,
+      event.latlng.lng
+    ]);
+  }
+
+  function handleInputChange(event: ChangeEvent<HTMLInputElement>) {
+    const { name, value } = event.target;
+
+    setFormData({ ...formData, [name]: value});
+  }
+
+  function handleSelectItem(id: number) {
+    const wasSelected = selectedItems.findIndex(item => item === id);
+
+    if ( wasSelected >= 0 ) {
+      const filteredItems = selectedItems.filter(item => item !== id);
+
+      setSelectedItems(filteredItems);
+    } else {
+      setSelectedItems([...selectedItems, id]);
+    }
+  }
+
+  async function handleSubmit(event: FormEvent) {
+    event.preventDefault();
+
+    const { name, email, phone } = formData;
+    const uf = selectedState;
+    const city = selectedCity;
+    const [latitude, longitude] = selectedPosition;
+    const items = selectedItems;
+
+    const data = {
+      name,
+      email,
+      phone,
+      uf,
+      city,
+      latitude,
+      longitude,
+      items
+    }
+
+    await api.post('points', data);
+
+    alert('Collection Point Registered!');
+
+    history.push('/');
+  }
+
   return (
     <div id="create-point-page">
       <header>
@@ -76,7 +146,7 @@ const CreatePoint = () => {
         </Link>
       </header>
 
-      <form>
+      <form onSubmit={handleSubmit}>
         <h1>Register Form <br />for Collection Point</h1>
 
         <fieldset>
@@ -90,7 +160,8 @@ const CreatePoint = () => {
               type="text"
               name="name"
               id="name"
-              />
+              onChange={handleInputChange}
+            />
           </div>
 
           <div className="field-group">
@@ -100,7 +171,8 @@ const CreatePoint = () => {
                 type="email"
                 name="email"
                 id="email"
-                />
+                onChange={handleInputChange}
+              />
             </div>
 
             <div className="field">
@@ -109,7 +181,8 @@ const CreatePoint = () => {
                 type="text"
                 name="phone"
                 id="phone"
-                />
+                onChange={handleInputChange}
+              />
             </div>
           </div>
         </fieldset>
@@ -120,13 +193,17 @@ const CreatePoint = () => {
             <span>Choose the address in the map</span>
           </legend>
 
-          <Map center={[53.3594112, -6.2455808]} zoom={15}>
+          <Map 
+            center={initialPosition} 
+            zoom={15}
+            onclick={handleMapClick}>
+
             <TileLayer
               attribution='&amp;copy <a href="http://osm.org/copyright">OpenStreetMap</a> contributors'
               url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
             />
 
-            <Marker position={[53.3594112, -6.2455808]} />
+            <Marker position={selectedPosition} />
           </Map>
 
           <div className="field-group">
@@ -168,7 +245,12 @@ const CreatePoint = () => {
 
           <ul className="items-grid">
             {items.map(item => (
-              <li key={item.id}>
+              <li 
+                key={item.id} 
+                className={selectedItems.includes(item.id) ? 'selected' : ''}
+                onClick={() => handleSelectItem(item.id)}
+              >
+
                 <img src={item.image_url} alt={item.title}/>
                 <span>{item.title}</span>
               </li>
